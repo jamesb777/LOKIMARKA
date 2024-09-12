@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium Grid Game</title>
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #0d0d0d, #1f1f1f);
+            color: #fff;
+        }
+        #grid {
+            display: grid;
+            gap: 2px;
+            border: 4px solid #ffcc00;
+            padding: 10px;
+            background-color: #0d0d0d;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+            border-radius: 15px;
+        }
+        .cell {
+            width: 60px;
+            height: 60px;
+            background-color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 10px;
+            border: 3px solid #444;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            color: #fff;
+            cursor: pointer;
+        }
+        .cell.disabled {
+            background-color: #222;
+            border-color: #000;
+            cursor: not-allowed;
+        }
+        .cell.marked {
+            transform: scale(1.1);
+            border-color: #ffcc00;
+        }
+        #controls {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .player-turn {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #FFDD57;
+        }
+        .message {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: #FFDD57;
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 24px;
+            font-weight: bold;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+            display: none;
+        }
+        .scoreboard {
+            margin: 10px;
+            font-size: 18px;
+            color: #FFDD57;
+        }
+        #timer {
+            font-size: 18px;
+            font-weight: bold;
+            color: #FFDD57;
+        }
+        .last-move {
+            box-shadow: 0 0 10px 2px #ffcc00;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <label for="grid-size">Grid Size:</label>
+        <select id="grid-size">
+            <option value="10x10">10x10</option>
+            <option value="15x15">15x15</option>
+            <option value="20x20">20x20</option>
+            <option value="10x14">10x14</option>
+            <option value="12x17">12x17</option>
+            <option value="33x28">33x28</option>
+        </select>
+        <label for="players">Number of Players:</label>
+        <select id="players">
+            <option value="1">1 (vs PC)</option>
+            <option value="2">2 (Humano vs Humano)</option>
+        </select>
+        <button onclick="startGame()">Start Game</button>
+    </div>
+
+    <div id="turn-info" class="player-turn">Turno del jugador 1</div>
+    <div id="timer">Tiempo restante: 20s</div>
+    <div id="scoreboard" class="scoreboard"></div>
+    <div id="grid"></div>
+
+    <div id="message" class="message"></div>
+
+    <audio id="laser-sound" src="https://www.soundjay.com/button/beep-07.wav"></audio>
+    <audio id="bell-sound" src="https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3"></audio>
+
+    <script>
+        let gridElement, grid, gridSize, players, currentPlayer, playerSymbols, playerColors, playerMoves, laserSound, bellSound, timerInterval, timeLeft, lastMoveElement, playAgainstPC = false;
+
+        function startGame() {
+            gridElement = document.getElementById('grid');
+            gridSize = document.getElementById('grid-size').value;
+            players = parseInt(document.getElementById('players').value);
+            playAgainstPC = players === 1; // Jugar contra la PC si el jugador elige 1
+            playerSymbols = ['A', 'E', 'I', 'O']; // Caracteres
+            playerColors = ['#FF5733', '#33FF57', '#33C9FF', '#FFD700'].slice(0, players + 1); // Colores brillantes
+            playerMoves = Array(players + 1).fill(0); // Si es 1 jugador, incluir también la PC
+            currentPlayer = 0;
+            laserSound = document.getElementById('laser-sound');
+            bellSound = document.getElementById('bell-sound');
+            lastMoveElement = null;
+
+            grid = createGrid(gridSize);
+            drawGrid(grid);
+            updateTurnIndicator();
+            startTurnTimer();
+        }
+
+        function createGrid(size) {
+            const [cols, rows] = size.split('x').map(Number);
+            let newGrid = Array.from({ length: rows }, () => Array(cols).fill(null));
+
+            // Generar mapa irregular con casillas deshabilitadas
+            const disabledPercentage = Math.floor(Math.random() * (35 - 15 + 1)) + 15; // Entre 15% y 35%
+            const totalCells = rows * cols;
+            const disabledCells = Math.floor(totalCells * (disabledPercentage / 100));
+
+            let disabledCount = 0;
+            while (disabledCount < disabledCells) {
+                const row = Math.floor(Math.random() * rows);
+                const col = Math.floor(Math.random() * cols);
+                if (newGrid[row][col] === null) {
+                    newGrid[row][col] = 'disabled';
+                    disabledCount++;
+                }
+            }
+            return newGrid;
+        }
+
+        function drawGrid(grid) {
+            gridElement.innerHTML = '';
+            gridElement.style.gridTemplateColumns = `repeat(${grid[0].length}, 1fr)`;
+            gridElement.style.gridTemplateRows = `repeat(${grid.length}, 1fr)`;
+
+            grid.forEach((row, rowIndex) => {
+                row.forEach((cell, colIndex) => {
+                    const cellElement = document.createElement('div');
+                    cellElement.className = cell === 'disabled' ? 'cell disabled' : 'cell';
+                    if (cell !== 'disabled') {
+                        cellElement.addEventListener('click', () => markCell(rowIndex, colIndex, cellElement));
+                    }
+                    gridElement.appendChild(cellElement);
+                });
+            });
+        }
+
+        function markCell(row, col, cellElement) {
+            if (grid[row][col] !== null || !isValidMove(row, col)) {
+                alert('Movimiento inválido! Intenta otra casilla.');
+                return;
+            }
+
+            grid[row][col] = playerSymbols[currentPlayer];
+            cellElement.textContent = grid[row][col];
+            cellElement.style.backgroundColor = playerColors[currentPlayer];
+            cellElement.classList.add('marked');
+
+            if (lastMoveElement) {
+                lastMoveElement.classList.remove('last-move');
+            }
+            cellElement.classList.add('last-move');
+            lastMoveElement = cellElement;
+
+            playerMoves[currentPlayer] += 1;
+            playSound(laserSound);
+
+            if (checkForWinner()) {
+                announceWinner();
+            } else if (noMoreMoves()) {
+                announceLoser();
+            } else {
+                switchPlayer();
+            }
+        }
+
+        function isValidMove(row, col) {
+            const neighbors = [
+                [0, 1], [1, 0], [0, -1], [-1, 0],
+                [-1, -1], [-1, 1], [1, -1], [1, 1]
+            ];
+
+            for (const [dx, dy] of neighbors) {
+                const newRow = row + dx;
+                const newCol = col + dy;
+                if (grid[newRow] && playerSymbols.includes(grid[newRow][newCol]) && grid[newRow][newCol] !== playerSymbols[currentPlayer]) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        function playSound(sound) {
+            sound.currentTime = 0;
+            sound.play();
+        }
+
+        function switchPlayer() {
+            clearInterval(timerInterval);
+            currentPlayer = (currentPlayer + 1) % (players + (playAgainstPC ? 1 : 0));
+            updateTurnIndicator();
+            startTurnTimer();
+
+            if (playAgainstPC && currentPlayer === 1) {
+                // Simulación de movimiento de la PC (jugada aleatoria válida)
+                setTimeout(() => pcMove(), 1000);
+            }
+        }
+
+        function pcMove() {
+            let availableMoves = [];
+            grid.forEach((row, rowIndex) => {
+                row.forEach((cell, colIndex) => {
+                    if (cell === null && isValidMove(rowIndex, colIndex)) {
+                        availableMoves.push({ rowIndex, colIndex });
+                    }
+                });
+            });
+
+            if (availableMoves.length > 0) {
+                const move = availableMoves[Math.floor(Math.random() * availableMoves.length)];
+                markCell(move.rowIndex, move.colIndex, gridElement.childNodes[move.rowIndex * grid[0].length + move.colIndex]);
+            }
+        }
+
+        function startTurnTimer() {
+            timeLeft = 20;
+            const timerElement = document.getElementById('timer');
+            timerElement.textContent = `Tiempo restante: ${timeLeft}s`;
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                timerElement.textContent = `Tiempo restante: ${timeLeft}s`;
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    switchPlayer();
+                }
+            }, 1000);
+        }
+
+        function updateTurnIndicator() {
+            const turnInfo = document.getElementById('turn-info');
+            turnInfo.textContent = `Turno del jugador ${currentPlayer + 1} (${playerSymbols[currentPlayer]})`;
+        }
+
+        function noMoreMoves() {
+            const emptyCells = grid.flat().filter(cell => cell === null);
+            return emptyCells.length === 0;
+        }
+
+        function checkForWinner() {
+            return noMoreMoves();
+        }
+
+        function announceWinner() {
+            clearInterval(timerInterval);
+            const message = document.getElementById('message');
+            message.textContent = `¡El jugador ${currentPlayer + 1} (${playerSymbols[currentPlayer]}) ha ganado!`;
+            message.style.display = 'block';
+            playSound(bellSound);
+        }
+
+        function announceLoser() {
+            clearInterval(timerInterval);
+            const message = document.getElementById('message');
+            message.textContent = `¡El jugador ${currentPlayer + 1} no tiene más movimientos!`;
+            message.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
